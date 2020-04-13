@@ -1,0 +1,380 @@
+---
+title: "Lab 08 Regularization"
+author: "Lusine Zilfimian"
+date: |
+     `r format(as.Date("2020-04-13"), '%B %d (%A),  %Y')`
+fontsize: 9pt
+output: 
+    beamer_presentation:
+      theme: "AnnArbor"
+      colortheme: "beaver"
+      fonttheme: "structurebold"
+      fig_width: 3.5
+      fig_height: 2.5
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = T)
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(ggplot2, dplyr)
+```
+
+ ---
+ 
+# Contents
+
+ * Libraries
+ * Data Preparation
+ * Undestanding the data
+ * Intercept-only model
+ * Poisson Regression with one explanatory variable
+ * Interpretation
+ * Prediction
+ * Overdispersion 
+ * Model Selection
+ 
+ 
+ ---
+ 
+# Needed packages
+
+```{r message=FALSE, warning=FALSE}
+library(ggplot2)
+library(ggpubr)
+library(dplyr)
+library(AER) # for disp dispersiontest()
+library(MASS) # for glm.nb()
+```
+
+ ---
+ 
+# Data 
+
+ * Data with 915 observations on the following 6 variables.
+ * **art** - Articles during last 3 years of Ph.D.
+ * **fem** - 1 if female scientist; male - 0
+ * **mar** - 1 if married; else 0
+ * **kid5** - Number of children 5 or younger
+ * **phd** - Prestige of Ph.D. department
+ * **ment** - Articles by mentor during last 3 years
+
+# Data Preparation
+
+```{r}
+ar <- read.csv("articles.csv")
+str(ar)
+ar$fem <- factor(ar$fem, levels = c(0,1), labels = c("Male", "Female"))
+ar$mar <- factor(ar$mar, levels = c(0,1), labels = c("Else", "Married"))
+unique(ar$kid5)
+unique(ar$art)
+```
+
+# Undestanding the data
+
+```{r message=FALSE, warning=FALSE}
+ggplot(data = ar, aes(x = art)) + geom_histogram(bins = 20) +
+  labs(x = "Number of articles", y = "Count") + 
+  ggtitle("The distribution of articles")
+```
+
+ ---
+ 
+# Undestanding the data
+
+```{r message=FALSE, warning=FALSE}
+ggplot(data = ar, aes(x = fem, y = art))+
+  geom_boxplot()+
+  labs(x = "Gender", y = "# of Articles", title = "Articles by Gender")
+```
+
+ ---
+ 
+# Undestanding the data 
+
+```{r}
+ar %>% 
+  group_by(fem) %>%
+  summarise(Mean = mean(art), SD = sd(art), Min = min(art), Max = max(art))
+```
+
+ ---
+ 
+# Undestanding the data 
+
+```{r message=FALSE, warning=FALSE}
+ggplot(ar, aes(x = art, fill = fem)) +
+  geom_histogram(position = "dodge") +
+  labs(x="", y="# of Articles", title="By Gender") +
+  theme(legend.position = "None")
+```
+
+ ---
+ 
+# Undestanding the data 
+
+```{r}
+ggplot(data = ar, aes(x = mar, y = art)) +
+  geom_boxplot() + labs( x = "Marital Status", y = "# of Articles", 
+    title="By Marital Status")
+```
+
+
+ ---
+ 
+# Undestanding the data 
+
+```{r}
+ar %>% 
+  group_by(mar)%>%
+  summarise(Mean = mean(art), SD = sd(art), Min = min(art), Max = max(art))
+```
+
+
+ ---
+ 
+# Undestanding the data 
+
+```{r}
+ggplot(data = ar, aes(x = factor(kid5), y = art))+
+  geom_boxplot() + labs(x = "Number of kids", y = "# of Articles",
+    title="By number of kids")
+```
+
+ ---
+ 
+# Undestanding the data 
+
+```{r}
+ar %>% 
+  group_by(factor(kid5))%>%
+  summarise(Mean = mean(art), SD = sd(art), Min = min(art), Max = max(art))
+```
+
+ ---
+ 
+# Undestanding the data 
+
+```{r}
+ggplot(data = ar, aes(x = phd, y = art)) +
+  geom_point() + labs(x = "Prestige", y = "# of Articles", 
+    title=" The Relationship with Prestige")
+```
+
+ ---
+ 
+# Undestanding the data 
+
+```{r}
+summary(ar$phd)
+phddummy <- factor(ifelse(ar$phd > 3.1, 1, 0), levels = c(0,1), labels = c("High", "Low"))
+```
+
+ ---
+ 
+# Undestanding the data 
+
+
+```{r}
+ggplot(data = ar, aes(x = phddummy, y = art))+
+  geom_boxplot() + labs(x = "Prestige", y = "# of Articles",
+    title=" The Relationship with Prestige")
+```
+
+ ---
+ 
+# Undestanding the data 
+
+```{r}
+ggplot(data = ar, aes(x = ment, y = art)) +
+  geom_point() + labs(x = "Mentors' articles", y = "# of Articles",
+    title=" The Relationship with Mentor's Articles")
+```
+
+ ---
+ 
+# Intercept-only model
+
+ * $\lambda = e^{\beta_0}$
+
+```{r}
+mod <- glm(art ~ 1, data = ar, family = poisson(link = log))
+summary(mod)
+```
+
+# Intercept-only model (Outputs explanation)
+
+```{r}
+mean(ar$art)
+exp(mod$coefficients)
+(z <- 0.52644/0.02541)
+mod$null.deviance
+sum(resid(mod, type = "deviance")^2)
+```
+
+
+# Poisson Regression with one explanatory variable
+
+```{r}
+mod1 <- glm(art ~ mar , data = ar, family = poisson(link = log))
+summary(mod1)
+```
+
+# Interpretation
+
+```{r}
+exp(mod1$coefficients)
+```
+
+# Poisson Regression with two explanatory variables
+
+```{r}
+mod2 <- glm(art ~ fem + ment, data = ar, family = poisson(link = log))
+summary(mod2)
+```
+
+# Interpretation
+
+ * $e^{0.0251}=1.0254$ 
+
+```{r}
+exp(mod2$coefficients)
+```
+
+# Full model 
+
+```{r}
+mod.full <- glm(art~., data = ar, family = poisson(link = log))
+summary(mod.full)
+```
+
+
+# Prediction
+
+```{r}
+nd <- data.frame(fem = "Female", mar = "Married", kid5 = 0, phd = 2, 
+  ment = 15)
+as.numeric(predict(mod.full, newdata = nd))
+as.numeric(lambda <- predict(mod.full, newdata = nd, type="response"))
+
+dpois(4, lambda = lambda)
+ppois(4, lambda = lambda, lower.tail = T)
+ppois(4, lambda = lambda, lower.tail = F)
+```
+
+# Goodness of Fit Test
+
+ * Chi-squared Statistics 
+
+```{r}
+qchisq(p = 0.05, 909, lower.tail = F)
+(chi_sq <- sum(resid(mod.full, type = "pearson")^2/mod.full$fitted.values))
+pchisq(chi_sq, df = df.residual(mod.full), lower.tail = F)
+```
+
+# Overdispersion
+
+```{r}
+var(ar$art)
+mean(ar$art)
+```
+
+```{r}
+ar %>% group_by(kid5) %>%
+  summarise(Mean=mean(art), Var = var(art))
+modOver<- glm(art~kid5, data=ar, family = poisson(link = log))
+```
+
+
+# Overdispersion
+
+```{r}
+summary(modOver)
+```
+
+# Overdispertion
+
+ * $var(y) = \mu + \alpha * trafo(\mu)$
+ * Common specifications of the transformation function is $trafo(\mu)=\mu$
+ * $var(y) = \mu (1 + \alpha) = dispersion *\mu$
+
+```{r}
+dispersiontest(modOver, trafo = NULL)
+```
+
+```{r}
+mod.qp <- glm(art ~ kid5, data = ar, family = quasipoisson(link=log))
+mod.nb <- glm.nb(art ~ kid5, data = ar)
+```
+
+ ---
+# Overdispertion
+
+```{r}
+summary(mod.qp)
+```
+
+# Overdispertion
+
+```{r}
+summary(mod.nb)
+```
+
+# Overdispertion
+
+```{r}
+data.frame(coef(modOver), coef(mod.qp), coef(mod.nb))
+```
+
+# Overdispertion
+
+```{r}
+summary(modOver)$coefficients
+summary(mod.qp)$coefficients
+summary(mod.nb)$coefficients
+```
+
+
+# Overdispertion
+
+
+```{r}
+mod.full <- glm(art~., data = ar, family = poisson(link = log))
+dispersiontest(mod.full)
+mod.full.qp <-glm(art~., data = ar, family = quasipoisson(link = log))
+mod.full.nb <- glm.nb(art~., data = ar)
+```
+
+
+# Model Selection
+
+```{r}
+deviance(mod.full); deviance(mod.full.nb); deviance(mod.full.qp)
+mod.full$aic
+mod.full.nb$aic
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+## Visualization
+mod2
+library(ggplot2)
+year <- 1990:2010
+count <- c(29, 8, 13, 3, 20, 14, 18, 15, 10, 19, 17, 18, 24, 47, 52, 24, 25, 24, 31, 56, 48)
+df <- data.frame(year, count)
+my_glm <- glm(count ~ year, family = "poisson", data = df)
+my_glm$model$fitted <- predict(my_glm, type = "response")
+ggplot(my_glm$model) + geom_point(aes(year, count)) + geom_line(aes(year, fitted))
+?geom_histogram
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+#pchisq(mod1$deviance, df = df.residual(mod1), lower.tail = F)
+#pchisq(mod_f_qp$deviance, df = df.residual(mod_f_qp), lower.tail = F)
+#pchisq(mod_f_nb$deviance, df = df.residual(mod_f_nb), lower.tail = F)
+```
+
