@@ -27,13 +27,10 @@ pacman::p_load(ggplot2, dplyr)
 
  * Libraries
  * Data Preparation
- * Undestanding the data
- * Intercept-only model
- * Poisson Regression with one explanatory variable
- * Interpretation
- * Prediction
- * Overdispersion 
- * Model Selection
+ * Ridge
+ * LASSO
+ * Cross Validation 
+ * Elastic Nets
  
  
  ---
@@ -41,340 +38,305 @@ pacman::p_load(ggplot2, dplyr)
 # Needed packages
 
 ```{r message=FALSE, warning=FALSE}
-library(ggplot2)
-library(ggpubr)
+library(ISLR) # for data Hitters
 library(dplyr)
-library(AER) # for disp dispersiontest()
-library(MASS) # for glm.nb()
+library(glmnet)
+library(ggthemes)
 ```
 
  ---
  
-# Data 
+## Ridge
 
- * Data with 915 observations on the following 6 variables.
- * **art** - Articles during last 3 years of Ph.D.
- * **fem** - 1 if female scientist; male - 0
- * **mar** - 1 if married; else 0
- * **kid5** - Number of children 5 or younger
- * **phd** - Prestige of Ph.D. department
- * **ment** - Articles by mentor during last 3 years
 
-# Data Preparation
+* Understand the dataset
+* Make training and testing sets
+
 
 ```{r}
-ar <- read.csv("articles.csv")
-str(ar)
-ar$fem <- factor(ar$fem, levels = c(0,1), labels = c("Male", "Female"))
-ar$mar <- factor(ar$mar, levels = c(0,1), labels = c("Else", "Married"))
-unique(ar$kid5)
-unique(ar$art)
+colnames(Hitters)
+#?Hitters
+str(Hitters)
+summary(Hitters)
+Hitters <- na.omit(Hitters)
+dim(Hitters)
+
+set.seed(27)
+index <- sample(nrow(Hitters), nrow(Hitters) * 0.2, replace = F)
+train <- Hitters[index, 10:20]
+test <- Hitters[-index, 10:20]
+dim(train)
 ```
 
-# Undestanding the data
+\pagebreak
 
-```{r message=FALSE, warning=FALSE}
-ggplot(data = ar, aes(x = art)) + geom_histogram(bins = 20) +
-  labs(x = "Number of articles", y = "Count") + 
-  ggtitle("The distribution of articles")
+ * Unlike the modeling syntax before, with glmnet() we need to 
+   
+   * separately define dependent variable (y)
+   
+   * set of independent variables in the form of a matrix (x)
+   
+   * With alpha=1 we will get lasso regressing, with alpha=0, we will get ridge regression
+Set lambda, the penalizing parameter, equal to 0 
+
+
+```{r}
+x <- model.matrix(Salary ~ .,train)[,-1] 
+y <- train$Salary
+
+ridge.mod <- glmnet(x, y,lambda = 0, alpha = 0)
+names(ridge.mod)
+
+ridge.mod$lambda
+
+ridge.mod$a0
+ridge.mod$beta
+
+# lambda *(alpha Lasso + (1-alpha) Ridge)
+# inverse order of lambda
+grid <- 1:5
+ridge.mod <- glmnet(x, y, alpha = 0, lambda = grid)
+ridge.mod
+ridge.mod$lambda
 ```
 
- ---
+glmnet stores all the coefficients for each model in order of **largest to smallest** lambda.
+
+You can see how the largest lambda value has pushed these coefficients to nearly 0.
+
+```{r}
+grid <- 10 ^ seq(10,-2, length = 100)
+ridge.mod <- glmnet(x, y, alpha = 0, lambda = grid, standardize = T)
+ridge.mod$a0
+```
+
+\pagebreak
+
+```{r}
+options(scipen = 999)
+coef(ridge.mod)[c("CRuns", "CWalks"), 100]
+coef(ridge.mod)[c("CRuns", "CWalks"), 1]
+```
+
+```{r}
+as.matrix(ridge.mod$beta)[,1:3]
+```
+
+\pagebreak
+
+```{r}
+plot(ridge.mod, xvar="lambda")
+legend("bottomright", lwd = 2, col = 1:10, legend = colnames(x), cex = .6)
+```
+
+ * Each curve corresponds to a variable.
  
-# Undestanding the data
-
-```{r message=FALSE, warning=FALSE}
-ggplot(data = ar, aes(x = fem, y = art))+
-  geom_boxplot()+
-  labs(x = "Gender", y = "# of Articles", title = "Articles by Gender")
-```
-
- ---
+ * As $\lambda$ increases, the ridge coefficient estimates shrink towards zero.
  
-# Undestanding the data 
-
-```{r}
-ar %>% 
-  group_by(fem) %>%
-  summarise(Mean = mean(art), SD = sd(art), Min = min(art), Max = max(art))
-```
-
- ---
+ * When $\lambda$ is extremely large, then all of the ridge coefficient estimates are basically zero; this corresponds to the null model that contains no predictors.
  
-# Undestanding the data 
+ * The axis above indicates the number of nonzero coefficients at the current $\lambda$.
+ * In Ridge regression the number of variables remains the same.
 
-```{r message=FALSE, warning=FALSE}
-ggplot(ar, aes(x = art, fill = fem)) +
-  geom_histogram(position = "dodge") +
-  labs(x="", y="# of Articles", title="By Gender") +
-  theme(legend.position = "None")
-```
-
- ---
  
-# Undestanding the data 
+
+\pagebreak
+```{r}
+plot(ridge.mod, xvar="dev")
+legend("bottomleft", lwd = 2, col = 1:10, legend = colnames(x), cex = .6)
+```
+\pagebreak
 
 ```{r}
-ggplot(data = ar, aes(x = mar, y = art)) +
-  geom_boxplot() + labs( x = "Marital Status", y = "# of Articles", 
-    title="By Marital Status")
+plot(ridge.mod$beta[4,], xlab = "Index of lambda", ylab = "Number of walks", type = "b" )
+
+walk <- data.frame(y = ridge.mod$beta[4,])
+library(ggthemes)
+ggplot(walk, aes(x = 1:100, y = y)) + 
+  geom_point(alpha = 0.5, size = 2, col = "seagreen4")+
+  xlab("Index of lambda") +
+  ylab("Number of walks") + 
+  theme_pander()
+
+which.max(coef(ridge.mod)[ "CWalks", ])
+which.min(coef(ridge.mod)[ "CWalks", ])  
+max(coef(ridge.mod)[ "CWalks", ])
+min(coef(ridge.mod)[ "CWalks", ])
+```
+
+  To make predictions, we need to specify the value s, if s is numeric it shows the value of lambda used for regularization
+
+
+```{r}
+test_pr <- predict(ridge.mod, s = (0:500), newx = model.matrix(Salary ~ ., test)[,-1])
+
+rmse <- data.frame(rmse = apply(test_pr, 2, 
+  function (x) mean((x - test$Salary)^2 )))
+
+ggplot(rmse, aes(x = 1:501, y = rmse)) + 
+  geom_point(alpha = 0.5, size = 2, col = "mediumvioletred")+
+  xlab("") +
+  ylab("MSE") + 
+  theme_pander()
+```
+
+\pagebreak
+## Lasso
+
+
+ * Create l1 vector with values for lambda
+ * set alpha=1, to get LASSO regression
+ * Highly correlated numeric variables:
+
+
+```{r}
+cor(train[,c(1:4,7:9,10)])
+grid <- seq(from = 0, to = 3, by = 0.5)
+lasso.mod <- glmnet(y = y, x = x, lambda = grid, alpha = 1, standardize = T)
+lasso.mod
+```
+\pagebreak
+```{r}
+grid <- 2 ^ seq(8,-1, length = 100)
+lasso.mod <- glmnet(y = y, x = x, lambda = grid, alpha = 1, standardize = T)
+plot(lasso.mod, xvar="lambda")
+legend("bottomright", lwd = 2, col = 1:10, legend = colnames(x), cex = .6)
+```
+\pagebreak
+```{r}
+plot(lasso.mod, xvar="dev")
+legend("bottomleft", lwd = 2, col = 1:10, legend = colnames(x), cex = .6)
 ```
 
 
- ---
+\pagebreak
+
+
+```{r}
+length(lasso.mod$lambda)
+coeff <- as.matrix(lasso.mod$beta)
+coeff[,1:6]
+coeff[,c(14,25,50,70,80,90)]
+coeff_non_zero <- coeff[coeff[,50]!=0,]
+dim(train)
+dim(coeff_non_zero)
+rownames(coeff_non_zero)
+```
+
+
+With $\lambda_{50}$ we are getting 5 variables instead of 11 original variables
+
+
+\pagebreak
+### Cross-validation
+
+ * Doing 10-fold cross validation 
+ * 
  
-# Undestanding the data 
+```{r}
+set.seed(2708)
+grid <- exp(seq(-2,11, length = 100))
+lasso.cv <- cv.glmnet(y = y, x = x, lambda = grid, alpha = 1, nfolds = 10)
+names(lasso.cv)
+lasso.cv$nzero # Number of non-zero variables for each lambda
+```
+
+The mean cross - validated error - MSE not RMSE
 
 ```{r}
-ar %>% 
-  group_by(mar)%>%
-  summarise(Mean = mean(art), SD = sd(art), Min = min(art), Max = max(art))
+lasso.cv$cvm
 ```
 
 
- ---
+\pagebreak
+
+Here are the subset of lambda values, mean square errors, standard errors of MSE and bounds for MSE:
+
+
+```{r}
+head(data.frame( Lambda = lasso.cv$lambda,
+  CVM = lasso.cv$cvm, SD = lasso.cv$cvsd,
+  CVUP = lasso.cv$cvup, CVLO = lasso.cv$cvlo
+))
+```
+
+ * Finally, lambda values
+
+```{r}
+lasso.cv$lambda
+```
+
+
+\pagebreak
+
+ * Cross-validation curve (red dotted line), and upper and lower standard deviation curves along:
+
+ * $\lambda_{min}$ that gives a minimum mean cross-validated error
+ *  $\lambda_{1se}$ gives the most regularized model such that error is within one standard error of the minimum
+
+
+ * Lowest MSE is achieved when lambda = ?
+```{r}
+plot(lasso.cv)
+```
+
+\pagebreak
+
+ * Lets build the model with the lambda for lowest MSE
+
+```{r}
+lasso.cv$lambda.min
+lasso.mod1 <- glmnet(y = y, x = x, lambda=lasso.cv$lambda.min, alpha=1, standardize = T)
+print(lasso.mod1)
+lasso.cv$lambda.1se
+```
+
+## Elastic Net
+
+
+ * Any alpha value between 0-1 will perform an elastic net.
+ * When alpha = 0.5 we perform an equal combination of penalties whereas alpha → 0 will have a heavier ridge penalty applied and alpha → 1 will have a heavier lasso penalty
+
+
+```{r}
+lasso    <- glmnet(x, y, alpha = 1, standardize = T)
+elastic1 <- glmnet(x, y, alpha = 0.25, standardize = T) 
+elastic2 <- glmnet(x, y, alpha = 0.75, standardize = T) 
+ridge    <- glmnet(x, y, alpha = 0, standardize = T)
+
+plot(lasso, xvar = "lambda", main = "Lasso (Alpha = 1)\n\n")
+plot(elastic1, xvar = "lambda", main = "Elastic Net (Alpha = .25)\n\n")
+plot(elastic2, xvar = "lambda", main = "Elastic Net (Alpha = .75)\n\n")
+plot(ridge, xvar = "lambda", main = "Ridge (Alpha = 0)\n\n")
+
+```
+
+### Best El net
+
+ * In elastic nets we want to tune both λ and the α parameters:
+
+```{r}
+elnet <- glmnet(x, y, alpha=.5, standardize = T)
+
+models <- list()
+set.seed(2708)
+for (i in 0:10) {
+  name <- paste0("alpha", i/10)
+  models[[name]] <- cv.glmnet(x, y, type.measure="mse", alpha=i/10)
+}
  
-# Undestanding the data 
+results <- data.frame()
+xt <- model.matrix(Salary ~ .,test)[,-1] 
+yt <- test$Salary
 
-```{r}
-ggplot(data = ar, aes(x = factor(kid5), y = art))+
-  geom_boxplot() + labs(x = "Number of kids", y = "# of Articles",
-    title="By number of kids")
-```
-
- ---
+for (i in 0:10) {
+  name <- paste0("alpha", i/10)
+  predicted <- predict(models[[name]], s = models[[name]]$lambda.1se, newx = xt)
+  mse <-mean((yt - predicted)^2)
+  temp <- data.frame(alpha=i/10, mse = mse, name = name)
+  results <- rbind(results, temp)
+}
  
-# Undestanding the data 
-
-```{r}
-ar %>% 
-  group_by(factor(kid5))%>%
-  summarise(Mean = mean(art), SD = sd(art), Min = min(art), Max = max(art))
+results
+min(results$mse)
 ```
-
- ---
- 
-# Undestanding the data 
-
-```{r}
-ggplot(data = ar, aes(x = phd, y = art)) +
-  geom_point() + labs(x = "Prestige", y = "# of Articles", 
-    title=" The Relationship with Prestige")
-```
-
- ---
- 
-# Undestanding the data 
-
-```{r}
-summary(ar$phd)
-phddummy <- factor(ifelse(ar$phd > 3.1, 1, 0), levels = c(0,1), labels = c("High", "Low"))
-```
-
- ---
- 
-# Undestanding the data 
-
-
-```{r}
-ggplot(data = ar, aes(x = phddummy, y = art))+
-  geom_boxplot() + labs(x = "Prestige", y = "# of Articles",
-    title=" The Relationship with Prestige")
-```
-
- ---
- 
-# Undestanding the data 
-
-```{r}
-ggplot(data = ar, aes(x = ment, y = art)) +
-  geom_point() + labs(x = "Mentors' articles", y = "# of Articles",
-    title=" The Relationship with Mentor's Articles")
-```
-
- ---
- 
-# Intercept-only model
-
- * $\lambda = e^{\beta_0}$
-
-```{r}
-mod <- glm(art ~ 1, data = ar, family = poisson(link = log))
-summary(mod)
-```
-
-# Intercept-only model (Outputs explanation)
-
-```{r}
-mean(ar$art)
-exp(mod$coefficients)
-(z <- 0.52644/0.02541)
-mod$null.deviance
-sum(resid(mod, type = "deviance")^2)
-```
-
-
-# Poisson Regression with one explanatory variable
-
-```{r}
-mod1 <- glm(art ~ mar , data = ar, family = poisson(link = log))
-summary(mod1)
-```
-
-# Interpretation
-
-```{r}
-exp(mod1$coefficients)
-```
-
-# Poisson Regression with two explanatory variables
-
-```{r}
-mod2 <- glm(art ~ fem + ment, data = ar, family = poisson(link = log))
-summary(mod2)
-```
-
-# Interpretation
-
- * $e^{0.0251}=1.0254$ 
-
-```{r}
-exp(mod2$coefficients)
-```
-
-# Full model 
-
-```{r}
-mod.full <- glm(art~., data = ar, family = poisson(link = log))
-summary(mod.full)
-```
-
-
-# Prediction
-
-```{r}
-nd <- data.frame(fem = "Female", mar = "Married", kid5 = 0, phd = 2, 
-  ment = 15)
-as.numeric(predict(mod.full, newdata = nd))
-as.numeric(lambda <- predict(mod.full, newdata = nd, type="response"))
-
-dpois(4, lambda = lambda)
-ppois(4, lambda = lambda, lower.tail = T)
-ppois(4, lambda = lambda, lower.tail = F)
-```
-
-# Goodness of Fit Test
-
- * Chi-squared Statistics 
-
-```{r}
-qchisq(p = 0.05, 909, lower.tail = F)
-(chi_sq <- sum(resid(mod.full, type = "pearson")^2/mod.full$fitted.values))
-pchisq(chi_sq, df = df.residual(mod.full), lower.tail = F)
-```
-
-# Overdispersion
-
-```{r}
-var(ar$art)
-mean(ar$art)
-```
-
-```{r}
-ar %>% group_by(kid5) %>%
-  summarise(Mean=mean(art), Var = var(art))
-modOver<- glm(art~kid5, data=ar, family = poisson(link = log))
-```
-
-
-# Overdispersion
-
-```{r}
-summary(modOver)
-```
-
-# Overdispertion
-
- * $var(y) = \mu + \alpha * trafo(\mu)$
- * Common specifications of the transformation function is $trafo(\mu)=\mu$
- * $var(y) = \mu (1 + \alpha) = dispersion *\mu$
-
-```{r}
-dispersiontest(modOver, trafo = NULL)
-```
-
-```{r}
-mod.qp <- glm(art ~ kid5, data = ar, family = quasipoisson(link=log))
-mod.nb <- glm.nb(art ~ kid5, data = ar)
-```
-
- ---
-# Overdispertion
-
-```{r}
-summary(mod.qp)
-```
-
-# Overdispertion
-
-```{r}
-summary(mod.nb)
-```
-
-# Overdispertion
-
-```{r}
-data.frame(coef(modOver), coef(mod.qp), coef(mod.nb))
-```
-
-# Overdispertion
-
-```{r}
-summary(modOver)$coefficients
-summary(mod.qp)$coefficients
-summary(mod.nb)$coefficients
-```
-
-
-# Overdispertion
-
-
-```{r}
-mod.full <- glm(art~., data = ar, family = poisson(link = log))
-dispersiontest(mod.full)
-mod.full.qp <-glm(art~., data = ar, family = quasipoisson(link = log))
-mod.full.nb <- glm.nb(art~., data = ar)
-```
-
-
-# Model Selection
-
-```{r}
-deviance(mod.full); deviance(mod.full.nb); deviance(mod.full.qp)
-mod.full$aic
-mod.full.nb$aic
-```
-
-
-
-```{r eval=FALSE, include=FALSE}
-## Visualization
-mod2
-library(ggplot2)
-year <- 1990:2010
-count <- c(29, 8, 13, 3, 20, 14, 18, 15, 10, 19, 17, 18, 24, 47, 52, 24, 25, 24, 31, 56, 48)
-df <- data.frame(year, count)
-my_glm <- glm(count ~ year, family = "poisson", data = df)
-my_glm$model$fitted <- predict(my_glm, type = "response")
-ggplot(my_glm$model) + geom_point(aes(year, count)) + geom_line(aes(year, fitted))
-?geom_histogram
-```
-
-
-
-```{r eval=FALSE, include=FALSE}
-#pchisq(mod1$deviance, df = df.residual(mod1), lower.tail = F)
-#pchisq(mod_f_qp$deviance, df = df.residual(mod_f_qp), lower.tail = F)
-#pchisq(mod_f_nb$deviance, df = df.residual(mod_f_nb), lower.tail = F)
-```
-
