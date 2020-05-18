@@ -1,0 +1,267 @@
+---
+title: "Lab 13 Random Forest"
+author: "Lusine Zilfimian"
+date: |
+     `r format(as.Date("2020-05-06"), '%B %d (%A),  %Y')`
+fontsize: 9pt
+output: 
+    beamer_presentation:
+      theme: "AnnArbor"
+      colortheme: "beaver"
+      fonttheme: "structurebold"
+      fig_width: 3.5
+      fig_height: 2.5
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = T)
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(shiny, ggplot2, dplyr, shinydashboard)
+```
+
+ ---
+ 
+# Contents
+
+ * Shinyapps.io - Getting started
+ * Libraries
+ * Random Forest
+ * Comparison
+
+ ---
+ 
+# Shinyapps.io - Getting started 
+ 
+ * Install `rsconnect`
+ * Create a **shinyapps.io** account
+ * Deploy your app.
+ * Main URL - https://shiny.rstudio.com/articles/shinyapps.html
+ 
+# Needed packages
+
+```{r message=FALSE, warning=FALSE}
+library(dplyr) 
+library(ggplot2) 
+library(caret)
+library(rpart)
+library(randomForest)
+```
+
+# Understanding the data
+
+```{r}
+credit <- read.csv("credit.csv")
+set.seed(2708)
+index <- createDataPartition(credit$default, p = 0.8, list = F)
+Train <- credit[index,]; Test <- credit[-index,]
+str(Train)
+```
+
+ ---
+ 
+## Base classifier
+
+Checking test error for base classifier
+
+```{r}
+model_c <- rpart(formula = default ~ ., 
+  data = Train, method = "class")
+pred_class <- predict(model_c, Test, type = "class")
+confusionMatrix(pred_class, Test$default, positive = "Yes")
+```
+
+ ---
+ 
+## Base classifier
+
+Checking the result for base classifier
+
+
+```{r}
+mean(pred_class == Test$default) # Accuracy
+1 - mean(pred_class == Test$default) # MER
+```
+
+ ---
+
+ ---
+ 
+## Random Forest 
+ 
+ * **ntree** - number of threes to build
+ 
+```{r}
+set.seed(2708)
+model_f1 <- randomForest(default ~., data = Train)
+model_f1
+```
+
+ ---
+ 
+## Random Forest 
+ 
+ * OOB - (1-0.289)% of the OOB samples were correctly classified by the Random forsest.
+
+```{r}
+model_f1$err.rate
+```
+
+ ---
+ 
+## Random Forest Visualization
+
+  * Error rate when classifying Default, non-Default, OOB
+  * Inclease in ntrees => decrease in error
+
+```{r}
+visual.data <- data.frame(
+Trees = rep(1:dim(model_f1$err.rate)[1], times = 3),
+Type = rep(c("OOB", "No", "Yes"), each = 500),
+Error = c(model_f1$err.rate[,"OOB"],
+  model_f1$err.rate[,"No"],
+  model_f1$err.rate[,"Yes"]))
+
+ggplot(visual.data, aes(x = Trees, y = Error))+
+  geom_line(aes(color = Type))
+```
+
+ 
+ ---
+
+## Random Forest 
+ 
+ * **ntree** - number of threes to build
+
+```{r}
+set.seed(2708)
+model_f2 <- randomForest(default ~., data = Train, ntree = 25)
+model_f2
+```
+
+ --- 
+ 
+## Results
+
+```{r}
+table(Train$default)
+1 - 67/(80 + 67)
+1 - 366/(366 + 48)  
+```
+
+ ---
+ 
+## Random Forest 
+
+ * **mtry** - number of variables randomly sampled as candidates at each split   * Default value for **mtry** is $\sqrt{p}$ for classification.
+
+```{r}
+set.seed(2708)
+model_f3 <- randomForest(default ~., data = Train, ntree = 25, mtry = 3)
+model_f3
+```
+
+
+ ---
+ 
+## Random Forest 
+
+ * Columns 1 and 2 in the output give the classification error for each class
+ * The OOB value is the weighted average of the class errors (weighted by the fraction of observations in each class).
+ 
+```{r}
+set.seed(2708)
+model_f_ <- randomForest(default~., data = Train, ntree = 25, do.trace = T)
+```
+
+ ---
+ 
+## Random Forest 
+
+ * Increase in the number of trees
+ 
+```{r}
+model_f3 <- randomForest(default~., data = Train, ntree = 100)
+model_f3
+```
+
+ ---
+ 
+## Random Forest 
+
+ * We will do grid search for variable **mtry**
+ * How two find **mtry**?
+ 
+```{r}
+set.seed(1)
+trc <- trainControl(method = "cv", number = 10)
+mtry_grid <- expand.grid(mtry=c(3, 5, 9))
+modelbest <- train(default~., data = Train,
+            trControl = trc,
+            method = "rf",
+            ntree = 100,
+            tuneGrid = mtry_grid)
+modelbest$results[ ,c(1,2)]
+```
+
+ ---
+ 
+## Random Forest Visualization
+
+```{r}
+plot(modelbest)
+modelbest$bestTune
+```
+
+ ---
+ 
+## Random Forest 
+
+```{r}
+model_f3best <- randomForest(default~.,
+  data = Train, ntree = 100, mtry = 5)
+model_f3best
+```
+
+ ---
+ 
+## Random Forest 
+
+
+```{r}
+pr <- predict(model_f3best, newdata = Test, type = "prob")
+pr[1:10,]
+```
+
+
+ ---
+ 
+## Random Forest 
+
+
+```{r}
+pr.class <- predict(model_f3best, newdata = Test, type = "class")
+pr.class[1:10]
+```
+
+
+ ---
+ 
+## Comparing the results of DT and RF
+
+```{r}
+confusionMatrix(pred_class, Test$default, positive="Yes") # DT
+```
+
+ ---
+ 
+## Comparing the results of DT and RF
+
+
+```{r}
+confusionMatrix(pr.class, Test$default, positive="Yes")# RF
+```
+
+
+
+ 
